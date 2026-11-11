@@ -1,6 +1,20 @@
-# AstrBot 适配器插件 (astrbot_plugin_frostagent)
+# AstrBot 适配器插件 (astrbot_plugin_frostagent_adapter)
 
 [FrostAgent](https://github.com/GuaiZai233/FrostAgent) 的 AstrBot 专用适配器。
+
+此插件在 AstrBot 进程内运行，通过 WebSocket 连接独立的 FrostAgent 服务。插件源码、测试和发布现已从 FrostAgent 主仓库迁至本仓库。
+
+## 安装与升级
+
+在 AstrBot 的插件管理页选择通过 Git 仓库安装，填写：
+
+```text
+https://github.com/FrostAI/astrbot_plugin_frostagent_adapter.git
+```
+
+从旧的 `adapters/astrbot_plugin_frostagent` 副本迁移时，先备份插件配置，停止并移除旧副本，再安装此仓库并恢复配置。保留原插件标识 `frostagent_adapter` 和现有配置字段；同一个 AstrBot 中只运行一份插件，避免重复处理消息。此仓库首个独立版本为 0.2.3，桥接协议与迁移前的 0.2.2 相同。
+
+安装后关闭 AstrBot 自带的 LLM 回复，并按下文配置 FrostAgent 的实例连接。
 
 ## 配置说明
 
@@ -71,3 +85,25 @@ AstrBot 自身的唤醒词、命令前缀（如 `/help`）不作为 FrostAgent �
 从插件 0.1.4 起，aiocqhttp 平台会转发目标为当前 Bot 的戳一戳通知，包括未开启“转发全部群消息”的情况。在 FrostAgent 的“Bot 行为与回复策略”中开启“允许发送戳一戳行为”后，可填写附加文本并配置冷却时间；默认关闭、附加文本为空、每个群/私聊默认冷却 30 秒，同群所有人共用 CD。
 
 戳一戳按普通对话归触发用户扣除雪花，并遵守安全检查、群聊对话总开关和模型路由。有效戳一戳由 FrostAgent 处理；功能关闭、冷却中、路由禁用或连接失败时均不会回落到 AstrBot 默认 LLM。通知回复不会引用不存在的平台消息。
+
+## 开发与测试
+
+在本仓库根目录执行（不需要检出 FrostAgent，也不需要安装 AstrBot；测试使用 AstrBot API 替身）：
+
+```sh
+python -m venv .venv
+# Linux/macOS: source .venv/bin/activate
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m unittest discover -s . -p 'test_*.py' -v
+```
+
+CI 分别安装 `websockets==12.0` 和 `websockets==15.0.1`，运行完整测试集，包括本机真实 WebSocket 握手、鉴权和双向收发测试。测试不会连接真实 QQ 或 Telegram。
+
+`tests/fixtures/proactive_unreadable_sticker.json` 是迁移时复制的桥接协议样例，与 FrostAgent Go 端同名测试样例对应。修改桥接协议时，请同步检查两边的兼容性和回归测试。
+
+## 许可证与来源
+
+本仓库按 GNU Affero General Public License v3.0（`AGPL-3.0-only`）发布，完整条款见 [LICENSE](LICENSE)。保留的目录历史、作者和迁移来源见 [NOTICE](NOTICE)。此许可声明适用于本插件；独立运行的 FrostAgent 服务有自己的许可声明。
+
+部署修改版本并向用户提供网络交互时，请按 AGPL 第 13 条向这些用户显著提供获取对应版本源码的方式。

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
 from __future__ import annotations
 
 import asyncio
@@ -5,7 +7,7 @@ import json
 import unittest
 from dataclasses import replace
 
-from adapters.astrbot_plugin_frostagent.test_main import (
+from test_main import (
     FakeContext,
     FrostAgentWSClient,
     load_settings,

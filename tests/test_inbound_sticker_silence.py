@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
 import asyncio
 import json
 import unittest
@@ -12,7 +14,7 @@ from tests.test_message_components import (
 
 class InboundStickerSilenceTests(unittest.TestCase):
     def test_unreadable_sticker_payload_matches_backend_history_fixture(self):
-        fixture_path = Path(__file__).resolve().parents[3] / "internal/adapter/astrbot/testdata/proactive_unreadable_sticker.json"
+        fixture_path = Path(__file__).resolve().parent / "fixtures/proactive_unreadable_sticker.json"
         expected = json.loads(fixture_path.read_text(encoding="utf-8"))
         cases = [
             {"type": "mface", "data": {"url": "https://example.invalid/sticker.gif"}},

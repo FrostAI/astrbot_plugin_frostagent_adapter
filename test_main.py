@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
 from __future__ import annotations
 
 import asyncio
@@ -97,9 +99,7 @@ try:
 except ImportError:
     sys.modules["websockets"] = types.ModuleType("websockets")
 
-adapter_module = importlib.import_module(
-    "adapters.astrbot_plugin_frostagent.main"
-)
+adapter_module = importlib.import_module("main")
 FrostAgentAdapter = adapter_module.FrostAgentAdapter
 FrostAgentWSClient = adapter_module.FrostAgentWSClient
 Settings = adapter_module.Settings

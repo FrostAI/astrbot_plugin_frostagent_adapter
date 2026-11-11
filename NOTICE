@@ -1,0 +1,13 @@
+FrostAgent AstrBot adapter
+
+Copyright (c) frostfallx and the contributors recorded in the Git history.
+
+This repository was extracted from:
+https://github.com/GuaiZai233/FrostAgent
+Directory: adapters/astrbot_plugin_frostagent
+Source revision: 33741893010e457e26c6eb95185290b22c4220bb
+
+The directory history and original commit authors are preserved. The shared
+protocol fixture was copied from internal/adapter/astrbot/testdata at the same
+revision. Earlier revisions retain their original licensing terms; the
+standalone adapter from version 0.2.3 is released under AGPL-3.0-only.
