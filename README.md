@@ -107,3 +107,9 @@ CI 分别安装 `websockets==12.0` 和 `websockets==15.0.1`，运行完整测试
 本仓库按 GNU Affero General Public License v3.0（`AGPL-3.0-only`）发布，完整条款见 [LICENSE](LICENSE)。保留的目录历史、作者和迁移来源见 [NOTICE](NOTICE)。此许可声明适用于本插件；独立运行的 FrostAgent 服务有自己的许可声明。
 
 部署修改版本并向用户提供网络交互时，请按 AGPL 第 13 条向这些用户显著提供获取对应版本源码的方式。
+
+## 思考状态
+
+0.2.4 起支持 FrostAgent 的“展示思考状态”。在 FA 的 Bot 行为与回复策略中启用后，QQ（aiocqhttp，NapCat / SnowLuma）私聊调用 `set_input_status`，Telegram 私聊使用事件原生 `send_typing()`。后端与插件需要一起升级；旧后端忽略能力声明，旧插件不会收到状态动作。
+
+状态只在后端实际开始思考后触发，不把它当作回复或终止动作；工具执行期间按后端通知续发。状态请求有超时且不阻塞最终回复；终止、断线和 waiter 清理时取消在途请求。停止后由平台在收到回复或自然超时后清除标识。实际显示受客户端设置影响。

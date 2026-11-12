@@ -1076,3 +1076,100 @@ class ProactiveActionDispatchTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ThinkingStatusTest(unittest.IsolatedAsyncioTestCase):
+    async def test_capability_is_private_and_platform_specific(self):
+        event = FakeEvent(content="hello", sender_id="42")
+        event.platform = "aiocqhttp"
+        async def action(**kwargs):
+            return None
+        event.bot = SimpleNamespace(call_action=action)
+        payload = await adapter_module.build_frostagent_payload(event)
+        self.assertTrue(payload["metadata"]["thinking_status_supported"])
+        event._group_id = "synthetic-group"
+        self.assertFalse(adapter_module.supports_thinking_status(event))
+        event._group_id = ""
+        event.platform = "unsupported"
+        self.assertFalse(adapter_module.supports_thinking_status(event))
+        event.platform = "telegram"
+        self.assertFalse(adapter_module.supports_thinking_status(event))
+        event.send_typing = action
+        self.assertTrue(adapter_module.supports_thinking_status(event))
+
+    async def test_qq_status_uses_original_event_target(self):
+        event = FakeEvent(content="hello", sender_id="42")
+        event.platform = "aiocqhttp"
+        calls = []
+        started = asyncio.Event()
+        async def action(**kwargs):
+            calls.append(kwargs)
+            started.set()
+            return {"status": "ok", "retcode": 0}
+        event.bot = SimpleNamespace(call_action=action)
+        status = adapter_module.ThinkingStatusSender(event)
+        status.refresh()
+        await asyncio.wait_for(started.wait(), 1)
+        await status.task
+        self.assertEqual(calls, [{"action": "set_input_status", "user_id": 42, "event_type": 1, "self_id": "bot_self"}])
+        await status.stop()
+
+    async def test_telegram_in_flight_requests_do_not_stack_and_are_canceled(self):
+        event = FakeEvent(content="hello")
+        event.platform = "telegram"
+        started = asyncio.Event()
+        exited = asyncio.Event()
+        calls = []
+        async def send_typing():
+            calls.append("typing")
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                exited.set()
+        event.send_typing = send_typing
+        status = adapter_module.ThinkingStatusSender(event)
+        status.refresh()
+        await asyncio.wait_for(started.wait(), 1)
+        status.refresh()
+        self.assertEqual(calls, ["typing"])
+        await status.stop()
+        self.assertTrue(exited.is_set())
+
+    async def test_failure_stops_refreshing_without_propagating(self):
+        for failure in ("exception", "rejected"):
+            with self.subTest(failure=failure):
+                event = FakeEvent(content="hello", sender_id="42")
+                event.platform = "aiocqhttp"
+                calls = []
+                async def action(**kwargs):
+                    calls.append(kwargs)
+                    if failure == "exception":
+                        raise RuntimeError("synthetic failure")
+                    return {"retcode": 1404, "status": "failed"}
+                event.bot = SimpleNamespace(call_action=action)
+                status = adapter_module.ThinkingStatusSender(event)
+                status.refresh()
+                await status.task
+                self.assertTrue(status.failed)
+                status.refresh()
+                await status.stop()
+                self.assertEqual(len(calls), 1)
+
+    async def test_status_is_not_a_reply_or_terminal_and_cleans_up(self):
+        for terminal in ({"action": "noop"}, {"action": "send_message", "content": "answer"}, {"type": "connection_closed"}):
+            with self.subTest(terminal=terminal):
+                adapter = object.__new__(FrostAgentAdapter)
+                adapter._configuration_error = None
+                adapter.settings = SimpleNamespace(forward_all_group_messages=True, http_base_url="http://frostagent:8080")
+                adapter.client = FakeClient([{"action": "thinking_status", "is_intermediate": True}, terminal])
+                event = FakeEvent(content="hello")
+                event.platform = "telegram"
+                async def send_typing():
+                    await asyncio.Event().wait()
+                event.send_typing = send_typing
+                responses = [result async for result in adapter.forward_to_frostagent(event)]
+                self.assertEqual(responses, [{"content": "answer"}] if terminal.get("content") else [])
+                self.assertIsNone(adapter.client.queue)
+                if terminal.get("action") == "noop":
+                    self.assertEqual(event.should_call_llm_calls, [])
