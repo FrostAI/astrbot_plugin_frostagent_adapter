@@ -275,6 +275,63 @@ async def resolve_sticker_sources(action: dict[str, Any], http_base_url: str) ->
     return resolved_action
 
 
+def supports_thinking_status(event: AstrMessageEvent) -> bool:
+    if extract_group_id(event):
+        return False
+    platform = _extract_platform_name(event)
+    if platform == "aiocqhttp":
+        return bool(re.fullmatch(r"[1-9]\d*", extract_sender_id(event))) and callable(
+            getattr(first_attr(event, "bot"), "call_action", None)
+        )
+    return platform == "telegram" and callable(getattr(event, "send_typing", None))
+
+
+class ThinkingStatusSender:
+    """One bounded request at a time, owned by the original event waiter."""
+
+    def __init__(self, event: AstrMessageEvent):
+        self.event = event
+        self.task: asyncio.Task | None = None
+        self.failed = False
+
+    def refresh(self) -> None:
+        if self.failed or not supports_thinking_status(self.event):
+            return
+        if self.task is None or self.task.done():
+            self.task = asyncio.create_task(self._send())
+
+    async def _send(self) -> None:
+        try:
+            if _extract_platform_name(self.event) == "telegram":
+                request = self.event.send_typing()
+            else:
+                params: dict[str, Any] = {
+                    "action": "set_input_status",
+                    "user_id": int(extract_sender_id(self.event)),
+                    "event_type": 1,
+                }
+                self_id = call_noargs(self.event, "get_self_id")
+                if self_id is not None and str(self_id).strip():
+                    params["self_id"] = self_id
+                request = self.event.bot.call_action(**params)
+            if inspect.isawaitable(request):
+                result = await asyncio.wait_for(request, timeout=2.0)
+                if first_attr(result, "retcode") not in (None, 0) or first_attr(result, "status") not in (None, "ok"):
+                    raise RuntimeError("platform rejected thinking status")
+        except Exception as exc:
+            self.failed = True
+            logger.warning(f"[frostagent-adapter] 展示思考状态失败，本轮停止续发: {exc}")
+
+    async def stop(self) -> None:
+        if self.task is not None:
+            self.task.cancel()
+            try:
+                await self.task
+            except asyncio.CancelledError:
+                pass
+            self.task = None
+
+
 class FrostAgentWSClient:
     """Bidirectional transport: reverse dials FA; forward accepts one FA client."""
 
@@ -619,6 +676,7 @@ class FrostAgentAdapter(Star):
         session_key = f"{_extract_platform_name(event)}:group:{group_id}" if group_id else ""
         lock = self._bot_loop_locks.setdefault(session_key, asyncio.Lock()) if session_key else asyncio.Lock()
         queue = None
+        thinking_status = ThinkingStatusSender(event)
         msg_id = ""
         try:
             async with lock:
@@ -686,6 +744,13 @@ class FrostAgentAdapter(Star):
                 if action.get("type") == "connection_closed":
                     break
 
+                if action.get("action") == "thinking_status":
+                    thinking_status.refresh()
+                    continue
+
+                if action.get("type") != "quote_lookup" and not action.get("is_intermediate", False):
+                    await thinking_status.stop()
+
                 if action.get("type") == "quote_lookup":
                     quote_data = {}
                     if (
@@ -746,6 +811,7 @@ class FrostAgentAdapter(Star):
                 if not action.get("is_intermediate", False):
                     break
         finally:
+            await thinking_status.stop()
             if queue is not None:
                 self.client.unregister_waiter(msg_id)
 
@@ -775,6 +841,7 @@ async def build_frostagent_payload(event: AstrMessageEvent) -> dict[str, Any]:
             "platform": "aiocqhttp",
             "message_id": str(getattr_chain(event, "message_obj", "message_id") or uuid.uuid4().hex),
             "content": "", "attachments": [], "timestamp": int(time.time()),
+            "metadata": {"thinking_status_supported": supports_thinking_status(event)},
         }
     user_id = extract_sender_id(event)
     group_id = extract_group_id(event)
@@ -841,6 +908,7 @@ async def build_frostagent_payload(event: AstrMessageEvent) -> dict[str, Any]:
         payload["image_slot_counts"] = image_slot_counts
     metadata: dict[str, Any] = {
         "runtime_info_command": is_runtime_info,
+        "thinking_status_supported": supports_thinking_status(event),
         "sticker_only": sticker_only,
         "has_other_mention": has_other_mention,
         "has_other_content": has_other_content,
